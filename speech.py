@@ -29,6 +29,8 @@ import json
 import sys
 import subprocess
 
+import time, os, signal
+
 import pyaudio
 import requests
 from google.cloud import speech
@@ -146,10 +148,7 @@ def listen_print_loop(responses):
             return transcript
             break
 
-
 def main():
-    # See http://g.co/cloud/speech/docs/languages
-    # for a list of supported languages.
     language_code = 'ja-JP'  # a BCP-47 language tag
 
     client = speech.SpeechClient()
@@ -159,9 +158,10 @@ def main():
         language_code=language_code)
     streaming_config = types.StreamingRecognitionConfig(
         config=config,
-        interim_results=True)
+        interim_results=False)
 
     with MicrophoneStream(RATE, CHUNK) as stream:
+        print ("ok")
         audio_generator = stream.generator()
         requests = (types.StreamingRecognizeRequest(audio_content=content)
                     for content in audio_generator)
@@ -170,7 +170,6 @@ def main():
 
         # Now, put the transcription responses to use.
         return listen_print_loop(responses)
-
 
 def postdata(get_word):
     url = "http://192.168.2.29:9000/talk"
@@ -181,7 +180,26 @@ def postdata(get_word):
 
     json_responses = json.loads(response.text)
     subprocess.call('say "%s"' % json_responses["text"], shell=True)
+    print(get_word)
 
+
+def timer():
+    child_id = os.fork()
+    if child_id != 0:
+        time.sleep(20)
+        commands = os.popen('ps aux | grep %d | grep -v grep' % child_id)
+        lines = commands.readlines()
+        if len(lines) == 0 or 'Z+' in lines[0].strip():
+            pass
+        else:  # The child process is still working( not killed, not good )
+            os.kill(child_id, signal.SIGKILL)  # kill it.
+            CAN_KILLED = False
+
+        timer()
+
+    else:  # !! Child process !!
+        print(postdata(main()))  # doit something as child.
+        sys.exit()  # <= not to write os._exit
 
 if __name__ == '__main__':
-    postdata(main())
+    timer()
